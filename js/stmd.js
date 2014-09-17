@@ -72,7 +72,9 @@
     // Matches a character with a special meaning in markdown,
     // or a string of non-special characters.  Note:  we match
     // clumps of _ or * or `, because they need to be handled in groups.
-    var reMain = /^(?:[_*`\n]+|[\[\]\\!<&*_]|(?: *[^\n `\[\]\\!<&*_]+)+|[ \n]+)/m;
+    var reMain = /^(?:[_*`\n]+|[\[\]\\!<&]|(?: *[^\n `\[\]\\!<&*_]+)+|[ \n]+)/m;
+
+    var reToken = /[_*`\n]+|[\[\]\\!<&]|(?: *[^\n `\[\]\\!<&*_]+)+| *\n/gm;
 
     // UTILITY FUNCTIONS
 
@@ -839,9 +841,14 @@
         return res;
     };
 
+    var tokenize = function(s) {
+        return s.match(reToken);
+    }
+
     // Parse s as a list of inlines, using refmap to resolve references.
     var parseInlines = function(s, refmap) {
-        this.subject = s;
+        this.subject = tokenize(s);
+        console.log(this.subject);
         this.pos = 0;
         this.refmap = refmap || {};
         // this.memo = {};
