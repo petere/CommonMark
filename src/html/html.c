@@ -32,6 +32,36 @@ static inline void cr(strbuf *html)
 		strbuf_putc(html, '\n');
 }
 
+// Utility function copied from inlines.c.  TODO: put in shared module.
+void splice(node_inl* e, node_inl* children) {
+	node_inl * tmp;
+	if (children != NULL) {
+	    tmp = children;
+	    // Find last child
+	    while (tmp->next != NULL) {
+		tmp = tmp->next;
+	    }
+	    // Splice children into list
+	    tmp->next = e->next;
+	    e->next = children;
+	}
+	return ;
+}
+// Create an inline with a literal string value. TODO: make shared.
+// this is from inlines.c.
+inline static node_inl* make_literal(int t, chunk s)
+{
+	node_inl * e = calloc(1, sizeof(*e));
+	if(e != NULL) {
+	    e->tag = t;
+	    e->content.literal = s;
+	    e->next = NULL;
+	} else {
+	    log_warn("Could not allocate inline node");
+	}
+	return e;
+}
+
 // Convert an inline list to HTML.  Returns 0 on success, and sets result.
 static void inlines_to_html(strbuf *html, node_inl* ils)
 {
@@ -99,14 +129,16 @@ static void inlines_to_html(strbuf *html, node_inl* ils)
 
 			case INL_STRONG:
 				strbuf_puts(html, "<strong>");
-				inlines_to_html(html, ils->content.inlines);
-				strbuf_puts(html, "</strong>");
+                                splice(ils, make_literal(INL_RAW_HTML, chunk_literal("</strong>")));
+                                splice(ils, ils->content.inlines);
+				ils->content.inlines = NULL;
 				break;
 
 			case INL_EMPH:
 				strbuf_puts(html, "<em>");
-				inlines_to_html(html, ils->content.inlines);
-				strbuf_puts(html, "</em>");
+				splice(ils, make_literal(INL_RAW_HTML, chunk_literal("</em>")));
+                                splice(ils, ils->content.inlines);
+				ils->content.inlines = NULL;
 				break;
 		}
 		ils = ils->next;
