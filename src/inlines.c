@@ -11,6 +11,7 @@
 #include "inlines.h"
 #include "debug.h"
 
+
 typedef struct DelimiterStack {
 	struct DelimiterStack *previous;
 	struct DelimiterStack *next;
@@ -299,7 +300,7 @@ static int scan_delims(subject* subj, unsigned char c, bool * can_open, bool * c
 	return numdelims;
 }
 
-/* for debugging:
+/*
 static void print_delimiters(subject *subj)
 {
 	delimiter_stack *tempstack;
@@ -365,7 +366,10 @@ static node_inl* handle_strong_emph(subject* subj, unsigned char c, node_inl **l
 
 	inl_text = make_str(chunk_dup(&subj->input, subj->pos - numdelims, numdelims));
 
-	subj->delimiters = push_delimiter(subj, numdelims, c, can_open, can_close, inl_text);
+	if (can_open || can_close) {
+		subj->delimiters = push_delimiter(subj, numdelims, c, can_open, can_close,
+						  inl_text);
+	}
 
 	return inl_text;
 }
@@ -373,7 +377,7 @@ static node_inl* handle_strong_emph(subject* subj, unsigned char c, node_inl **l
 static void process_emphasis(subject *subj, node_inl *inlines, delimiter_stack *stack_bottom)
 {
 	delimiter_stack *closer = subj->delimiters;
-	delimiter_stack *opener, *tempstack;
+	delimiter_stack *opener, *tempstack, *nextstack;
 	int use_delims;
 	node_inl *inl, *tmp, *emph;
 
@@ -416,10 +420,13 @@ static void process_emphasis(subject *subj, node_inl *inlines, delimiter_stack *
 			closer->first_inline->content.literal.len = closer->delim_count;
 
 			// free delimiters between opener and closer
-			tempstack = closer->previous == stack_bottom ? NULL : closer->previous;
+			tempstack = closer->previous;
 			while (tempstack != NULL && tempstack != opener) {
+				nextstack = tempstack->previous;
 				remove_delimiter(subj, tempstack);
+				tempstack = nextstack;
 			}
+
 
 			// create new emph or strong, and splice it in to our inlines
 			// between the opener and closer
