@@ -374,7 +374,7 @@ static node_inl* handle_strong_emph(subject* subj, unsigned char c, node_inl **l
 	return inl_text;
 }
 
-static void process_emphasis(subject *subj, node_inl *inlines, delimiter_stack *stack_bottom)
+static void process_emphasis(subject *subj, delimiter_stack *stack_bottom)
 {
 	delimiter_stack *closer = subj->delimiters;
 	delimiter_stack *opener, *tempstack, *nextstack;
@@ -399,70 +399,70 @@ static void process_emphasis(subject *subj, node_inl *inlines, delimiter_stack *
 				}
 				opener = opener->previous;
 			}
-			if (opener == NULL || opener == stack_bottom) {
-				closer = closer->next;
-				break;
-			}
-			// calculate the actual number of delimeters used from this closer
-			if (closer->delim_count < 3 || opener->delim_count < 3) {
-				use_delims = closer->delim_count <= opener->delim_count ?
-					closer->delim_count : opener->delim_count;
-			} else { // closer and opener both have >= 3 delims
-				use_delims = closer->delim_count % 2 == 0 ? 2 : 1;
-			}
+			if (opener != NULL && opener != stack_bottom) {
+				// calculate the actual number of delimeters used from this closer
+				if (closer->delim_count < 3 || opener->delim_count < 3) {
+					use_delims = closer->delim_count <= opener->delim_count ?
+						closer->delim_count : opener->delim_count;
+				} else { // closer and opener both have >= 3 delims
+					use_delims = closer->delim_count % 2 == 0 ? 2 : 1;
+				}
 
-			inl = opener->first_inline;
+				inl = opener->first_inline;
 
-			// remove used delimiters from stack elements and associated inlines.
-			opener->delim_count -= use_delims;
-			closer->delim_count -= use_delims;
-			inl->content.literal.len = opener->delim_count;
-			closer->first_inline->content.literal.len = closer->delim_count;
+				// remove used delimiters from stack elements and associated inlines.
+				opener->delim_count -= use_delims;
+				closer->delim_count -= use_delims;
+				inl->content.literal.len = opener->delim_count;
+				closer->first_inline->content.literal.len = closer->delim_count;
 
-			// free delimiters between opener and closer
-			tempstack = closer->previous;
-			while (tempstack != NULL && tempstack != opener) {
-				nextstack = tempstack->previous;
-				remove_delimiter(subj, tempstack);
-				tempstack = nextstack;
-			}
+				// free delimiters between opener and closer
+				tempstack = closer->previous;
+				while (tempstack != NULL && tempstack != opener) {
+					nextstack = tempstack->previous;
+					remove_delimiter(subj, tempstack);
+					tempstack = nextstack;
+				}
 
 
-			// create new emph or strong, and splice it in to our inlines
-			// between the opener and closer
-			emph = use_delims == 1 ? make_emph(inl->next) : make_strong(inl->next);
-			emph->next = closer->first_inline;
-			inl->next = emph;
-			tmp = emph->content.inlines;
-			while (tmp->next != NULL && tmp->next != closer->first_inline) {
-				tmp = tmp->next;
-			}
-			tmp->next = NULL;
-
-			// if opener has 0 delims, remove it and its associated inline
-			if (opener->delim_count == 0) {
-				// replace empty opener inline with emph
-				chunk_free(&(inl->content.literal));
-				inl->tag = emph->tag;
-				inl->next = emph->next;
-				inl->content.inlines = emph->content.inlines;
-				free(emph);
-				emph = inl;
-				// remove opener from stack
-				remove_delimiter(subj, opener);
-			}
-
-			// if closer has 0 delims, remove it and its associated inline
-			if (closer->delim_count == 0) {
-				// remove empty closer inline
-				tmp = closer->first_inline;
-				emph->next = tmp->next;
+				// create new emph or strong, and splice it in to our inlines
+				// between the opener and closer
+				emph = use_delims == 1 ? make_emph(inl->next) : make_strong(inl->next);
+				emph->next = closer->first_inline;
+				inl->next = emph;
+				tmp = emph->content.inlines;
+				while (tmp->next != NULL && tmp->next != closer->first_inline) {
+					tmp = tmp->next;
+				}
 				tmp->next = NULL;
-				free_inlines(tmp);
-				// remove closer from stack
-				tempstack = closer->next;
-				remove_delimiter(subj, closer);
-				closer = tempstack;
+
+				// if opener has 0 delims, remove it and its associated inline
+				if (opener->delim_count == 0) {
+					// replace empty opener inline with emph
+					chunk_free(&(inl->content.literal));
+					inl->tag = emph->tag;
+					inl->next = emph->next;
+					inl->content.inlines = emph->content.inlines;
+					free(emph);
+					emph = inl;
+					// remove opener from stack
+					remove_delimiter(subj, opener);
+				}
+
+				// if closer has 0 delims, remove it and its associated inline
+				if (closer->delim_count == 0) {
+					// remove empty closer inline
+					tmp = closer->first_inline;
+					emph->next = tmp->next;
+					tmp->next = NULL;
+					free_inlines(tmp);
+					// remove closer from stack
+					tempstack = closer->next;
+					remove_delimiter(subj, closer);
+					closer = tempstack;
+				}
+			} else {
+				closer = closer->next;
 			}
 		} else {
 			closer = closer->next;
@@ -773,7 +773,7 @@ match:
 	inl->tag = is_image ? INL_IMAGE : INL_LINK;
 	chunk_free(&inl->content.literal);
 	inl->content.linkable.label = link_text;
-	process_emphasis(subj, inl->content.linkable.label, ostack->previous);
+	process_emphasis(subj, ostack->previous);
 	inl->content.linkable.url   = url;
 	inl->content.linkable.title = title;
 	inl->next = NULL;
@@ -836,7 +836,7 @@ extern node_inl* parse_inlines_from_subject(subject* subj)
 		}
 	}
 
-	process_emphasis(subj, first, NULL);
+	process_emphasis(subj, NULL);
 
 	return first;
 }
