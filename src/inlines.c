@@ -347,6 +347,11 @@ static node_inl* handle_strong_emph(subject* subj, unsigned char c, node_inl **l
 	return inl_text;
 }
 
+static void process_emphasis(node_inl *inlines, delimiter_stack *dstack)
+{
+	return;
+}
+
 /*
   int useDelims;
   int delimiterDelims;
@@ -714,6 +719,7 @@ match:
 	inl->tag = is_image ? INL_IMAGE : INL_LINK;
 	chunk_free(&inl->content.literal);
 	inl->content.linkable.label = link_text;
+	process_emphasis(inl->content.linkable.label, ostack);
 	inl->content.linkable.url   = url;
 	inl->content.linkable.title = title;
 	inl->next = NULL;
@@ -778,13 +784,9 @@ extern node_inl* parse_inlines_from_subject(subject* subj)
 		}
 	}
 
-	delimiter_stack* istack = subj->delimiters;
-	delimiter_stack* temp;
-	while (istack != NULL) {
-		temp = istack->previous;
-		free(istack);
-		istack = temp;
-	}
+	process_emphasis(first, subj->delimiters);
+
+	free_delimiters(subj, NULL);
 
 	return first;
 }
