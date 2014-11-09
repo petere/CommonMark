@@ -299,12 +299,12 @@ static int scan_delims(subject* subj, unsigned char c, bool * can_open, bool * c
 	return numdelims;
 }
 
-static void free_delimiters(subject* subj, delimiter_stack* istack)
+static void free_delimiters(delimiter_stack **topptr, delimiter_stack* bottom)
 {
 	delimiter_stack * tempstack;
-	while (subj->delimiters != istack) {
-		tempstack = subj->delimiters;
-		subj->delimiters = subj->delimiters->previous;
+	while (*topptr != NULL && *topptr != bottom) {
+		tempstack = *topptr;
+		*topptr = (*topptr)->previous;
 		free(tempstack);
 	}
 }
@@ -353,39 +353,72 @@ static node_inl* handle_strong_emph(subject* subj, unsigned char c, node_inl **l
 
 static void process_emphasis(subject *subj, node_inl *inlines, delimiter_stack *stack_bottom)
 {
-	delimiter_stack *current = subj->delimiters;
-	delimiter_stack *temp;
+	delimiter_stack *closer = subj->delimiters;
+	delimiter_stack *opener;
+	int use_delims;
+	node_inl *inl, *tmp;
 
 	// move back to first relevant delim.
-	while (current->previous != stack_bottom) {
-		current = current->previous;
+	while (closer != NULL && closer->previous != stack_bottom) {
+		closer = closer->previous;
 	}
 
 	// now move forward, looking for closers, and handling each
-	while (current != NULL) {
-		if (current->can_close &&
-		    (current->delim_char == '*' || current->delim_char == '_')) {
-			// TODO - now look backwards for first matching opener
-			temp = current;
-			while (temp != stack_bottom) {
-				if (temp->delim_char == current->delim_char &&
-				    temp->can_open) {
-					// TODO: create emph/strong
-					// cut out this part of the stack if used up
-
+	while (closer != NULL) {
+		if (closer->can_close &&
+		    (closer->delim_char == '*' || closer->delim_char == '_')) {
+			// Now look backwards for first matching opener:
+			opener = closer->previous;
+			while (opener != NULL && opener != stack_bottom) {
+				if (opener->delim_char == closer->delim_char &&
+				    opener->can_open) {
 					break;
 				}
-				temp = temp->previous;
+				opener = opener->previous;
 			}
-			// while temp...
-			// if opener found:
-			//   add emphasis
-			//   cut this part out of the stack if used up
+			log_info("opener pos %d", opener->position);
+			log_info("close pos %d", closer->position);
+			// calculate the actual number of delimeters used from this closer
+			if (closer->delim_count < 3 || opener->delim_count < 3) {
+				use_delims = closer->delim_count <= opener->delim_count ?
+					closer->delim_count : opener->delim_count;
+			} else { // closer and opener both have >= 3 delims
+				use_delims = closer->delim_count % 2 == 0 ? 2 : 1;
+			}
+			if (use_delims == opener->delim_count) {
+				// the opening delimiter is completely used up;
+				// reuse the inline element
+				inl = opener->first_inline;
+				inl->tag = use_delims == 1 ? INL_EMPH : INL_STRONG;
+				chunk_free(&inl->content.literal);
+				inl->content.inlines = inl->next;
+				tmp = inl->next;
+				while (tmp->next != closer->first_inline) {
+					tmp = tmp->next;
+				}
+				tmp->next = NULL;
+				inl->next = closer->first_inline;
+				// remove delimiters from opener to closer:
+				if (closer->next) {
+					closer->next->previous = opener->previous;
+				}
+				free_delimiters(&closer, opener->previous);
+				opener = opener->previous;
+
+				// TODO
+			} else {
+				// opening delimiter is not completely used up;
+				// we need to insert a new inline element, stack entry remains,
+				// in truncated form.
+				// TODO
+
+				// keep opener the same, don't set opener = opener->previous
+			}
 		}
-		current = current->next;
+		closer = closer->next;
 	}
 
-	free_delimiters(subj, stack_bottom->previous);
+	free_delimiters(&(subj->delimiters), stack_bottom);
 }
 
 /*
@@ -665,7 +698,7 @@ static node_inl* handle_close_bracket(subject* subj, node_inl **last)
 	bool is_image = false;
 	chunk urlchunk, titlechunk;
 	unsigned char *url, *title;
-	delimiter_stack *ostack = subj->delimiters;
+	delimiter_stack *ostack;
 	delimiter_stack *closer_above;
 	delimiter_stack *tempstack;
 	node_inl *link_text;
@@ -676,6 +709,7 @@ static node_inl* handle_close_bracket(subject* subj, node_inl **last)
 	initial_pos = subj->pos;
 
 	// look through stack of delimiters for a [ or !
+	ostack = subj->delimiters;
 	while (ostack) {
 		if (ostack->delim_char == '[' || ostack->delim_char == '!') {
 			break;
@@ -884,16 +918,14 @@ static int parse_inline(subject* subj, node_inl ** last)
 	case '<':
 		new = handle_pointy_brace(subj);
 		break;
-	case '_':
-		new = handle_strong_emph(subj, '_', last);
-		break;
 	case '*':
-		new = handle_strong_emph(subj, '*', last);
+	case '_':
+		new = handle_strong_emph(subj, c, last);
 		break;
 	case '[':
 		advance(subj);
 		new = make_str(chunk_literal("["));
-		subj->delimiters = push_delimiter(subj, 1, true, false, '[', new);
+		subj->delimiters = push_delimiter(subj, 1, '[', true, false, new);
 		break;
 	case ']':
 		new = handle_close_bracket(subj, last);
@@ -903,7 +935,7 @@ static int parse_inline(subject* subj, node_inl ** last)
 		if (peek_char(subj) == '[') {
 			advance(subj);
 			new = make_str(chunk_literal("!["));
-			subj->delimiters = push_delimiter(subj, 1, false, true, '!', new);
+			subj->delimiters = push_delimiter(subj, 1, '!', false, true, new);
 		} else {
 			new = make_str(chunk_literal("!"));
 		}
