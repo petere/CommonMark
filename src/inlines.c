@@ -299,17 +299,22 @@ static int scan_delims(subject* subj, unsigned char c, bool * can_open, bool * c
 	return numdelims;
 }
 
-static void free_delimiters(delimiter_stack **topptr, delimiter_stack* bottom)
+/* for debugging:
+static void print_delimiters(subject *subj)
 {
-	delimiter_stack * tempstack;
-	while (*topptr != NULL && *topptr != bottom) {
-		tempstack = *topptr;
-		*topptr = (*topptr)->previous;
-		free(tempstack);
+	delimiter_stack *tempstack;
+	tempstack = subj->delimiters;
+	while (tempstack != NULL) {
+		printf("Item at %p: %d %d %d %d next(%p) prev(%p)\n",
+		       tempstack, tempstack->delim_count, tempstack->delim_char,
+		       tempstack->can_open, tempstack->can_close,
+		       tempstack->next, tempstack->previous);
+		tempstack = tempstack->previous;
 	}
 }
+*/
 
-static void remove_delim(subject *subj, delimiter_stack *stack)
+static void remove_delimiter(subject *subj, delimiter_stack *stack)
 {
 	if (stack->previous != NULL) {
 		stack->previous->next = stack->next;
@@ -370,7 +375,7 @@ static void process_emphasis(subject *subj, node_inl *inlines, delimiter_stack *
 	delimiter_stack *closer = subj->delimiters;
 	delimiter_stack *opener, *tempstack;
 	int use_delims;
-	node_inl *inl, *tmp, *next, *emph;
+	node_inl *inl, *tmp, *emph;
 
 	// move back to first relevant delim.
 	while (closer != NULL && closer->previous != stack_bottom) {
@@ -379,7 +384,6 @@ static void process_emphasis(subject *subj, node_inl *inlines, delimiter_stack *
 
 	// now move forward, looking for closers, and handling each
 	while (closer != NULL) {
-		log_info("Examining potential closer at %d", closer->position);
 		if (closer->can_close &&
 		    (closer->delim_char == '*' || closer->delim_char == '_')) {
 			// Now look backwards for first matching opener:
@@ -393,10 +397,8 @@ static void process_emphasis(subject *subj, node_inl *inlines, delimiter_stack *
 			}
 			if (opener == NULL || opener == stack_bottom) {
 				closer = closer->next;
-				log_info("No matching opener found, moving to next closer");
 				break;
 			}
-			log_info("Found opener at %d", opener->position);
 			// calculate the actual number of delimeters used from this closer
 			if (closer->delim_count < 3 || opener->delim_count < 3) {
 				use_delims = closer->delim_count <= opener->delim_count ?
@@ -404,8 +406,6 @@ static void process_emphasis(subject *subj, node_inl *inlines, delimiter_stack *
 			} else { // closer and opener both have >= 3 delims
 				use_delims = closer->delim_count % 2 == 0 ? 2 : 1;
 			}
-			log_info("use_delims = %d", use_delims);
-			log_info("opener delim count = %d", opener->delim_count);
 
 			inl = opener->first_inline;
 
@@ -416,14 +416,16 @@ static void process_emphasis(subject *subj, node_inl *inlines, delimiter_stack *
 			closer->first_inline->content.literal.len = closer->delim_count;
 
 			// free delimiters between opener and closer
-			free_delimiters(&(closer->previous), opener);
+			tempstack = closer->previous == stack_bottom ? NULL : closer->previous;
+			while (tempstack != NULL && tempstack != opener) {
+				remove_delimiter(subj, tempstack);
+			}
 
 			// create new emph or strong, and splice it in to our inlines
 			// between the opener and closer
 			emph = use_delims == 1 ? make_emph(inl->next) : make_strong(inl->next);
 			emph->next = closer->first_inline;
 			inl->next = emph;
-			log_info("emph tag = %d", emph->tag);
 			tmp = emph->content.inlines;
 			while (tmp->next != NULL && tmp->next != closer->first_inline) {
 				tmp = tmp->next;
@@ -432,7 +434,6 @@ static void process_emphasis(subject *subj, node_inl *inlines, delimiter_stack *
 
 			// if opener has 0 delims, remove it and its associated inline
 			if (opener->delim_count == 0) {
-				log_info("Removing opener");
 				// replace empty opener inline with emph
 				chunk_free(&(inl->content.literal));
 				inl->tag = emph->tag;
@@ -441,30 +442,29 @@ static void process_emphasis(subject *subj, node_inl *inlines, delimiter_stack *
 				free(emph);
 				emph = inl;
 				// remove opener from stack
-				remove_delim(subj, opener);
-				log_info("Removed opener");
+				remove_delimiter(subj, opener);
 			}
 
 			// if closer has 0 delims, remove it and its associated inline
 			if (closer->delim_count == 0) {
-				log_info("Removing closer");
 				// remove empty closer inline
 				tmp = closer->first_inline;
 				emph->next = tmp->next;
-				emph->next = NULL;
 				tmp->next = NULL;
 				free_inlines(tmp);
 				// remove closer from stack
 				tempstack = closer->next;
-				remove_delim(subj, closer);
+				remove_delimiter(subj, closer);
 				closer = tempstack;
-				log_info("Removed closer");
 			}
 		} else {
 			closer = closer->next;
 		}
 	}
-	free_delimiters(&(subj->delimiters), stack_bottom);
+	// free all delimiters in stack down to stack_bottom:
+	while (subj->delimiters != stack_bottom) {
+		remove_delimiter(subj, subj->delimiters);
+	}
 }
 
 // Parse backslash-escape or just a backslash, returning an inline.
