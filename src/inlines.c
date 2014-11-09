@@ -334,94 +334,87 @@ static delimiter_stack * push_delimiter(subject *subj,
 // Assumes the subject has '_' or '*' at the current position.
 static node_inl* handle_strong_emph(subject* subj, unsigned char c, node_inl **last)
 {
-	bool can_open, can_close;
 	int numdelims;
-	int useDelims;
-	int delimiterDelims;
-	delimiter_stack * istack;
-	node_inl * inl;
-	node_inl * emph;
 	node_inl * inl_text;
+	bool can_open, can_close;
 
 	numdelims = scan_delims(subj, c, &can_open, &can_close);
 
-	if (can_close)
-		{
-			// walk the stack and find a matching delimiter, if there is one
-			istack = subj->delimiters;
-			while (true)
-				{
-					if (istack == NULL)
-						goto cannotClose;
-
-					if (istack->delim_char == c)
-						break;
-
-					istack = istack->previous;
-				}
-
-			// calculate the actual number of delimeters used from this closer
-			delimiterDelims = istack->delim_count;
-			if (numdelims < 3 || delimiterDelims < 3) {
-				useDelims = numdelims <= delimiterDelims ? numdelims : delimiterDelims;
-			} else { // (numdelims >= 3 && delimiterDelims >= 3)
-				useDelims = numdelims % 2 == 0 ? 2 : 1;
-			}
-
-			if (istack->delim_count == useDelims)
-				{
-					// the delimiter is completely used up - remove the stack entry and reuse the inline element
-					inl = istack->first_inline;
-					inl->tag = useDelims == 1 ? INL_EMPH : INL_STRONG;
-					chunk_free(&inl->content.literal);
-					inl->content.inlines = inl->next;
-					inl->next = NULL;
-
-					// remove this delimiter and all later ones from stack:
-					free_delimiters(subj, istack->previous);
-					*last = inl;
-				}
-			else
-				{
-					// the delimiter will only partially be used - stack entry remains (truncated) and a new inline is added.
-					inl = istack->first_inline;
-					istack->delim_count -= useDelims;
-					inl->content.literal.len = istack->delim_count;
-
-					emph = useDelims == 1 ? make_emph(inl->next) : make_strong(inl->next);
-					inl->next = emph;
-
-					// remove all later delimiters from stack:
-					free_delimiters(subj, istack);
-
-					*last = emph;
-				}
-
-			// if the closer was not fully used, move back a char or two and try again.
-			if (useDelims < numdelims)
-				{
-					subj->pos = subj->pos - numdelims + useDelims;
-					return NULL;
-				}
-
-			return NULL; // make_str(chunk_literal(""));
-		}
-
- cannotClose:
 	inl_text = make_str(chunk_dup(&subj->input, subj->pos - numdelims, numdelims));
 
-	if (can_open)
-		{
-			subj->delimiters = push_delimiter(subj,
-							  numdelims,
-							  c,
-							  can_open,
-							  can_close,
-							  inl_text);
-		}
+	subj->delimiters = push_delimiter(subj, numdelims, c, can_open, can_close, inl_text);
 
 	return inl_text;
 }
+
+/*
+  int useDelims;
+  int delimiterDelims;
+  delimiter_stack * istack;
+  node_inl * emph;
+  node_inl * inl;
+
+  {
+  // walk the stack and find a matching delimiter, if there is one
+  istack = subj->delimiters;
+  while (true)
+  {
+  if (istack == NULL)
+  goto cannotClose;
+
+  if (istack->delim_char == c)
+  break;
+
+  istack = istack->previous;
+  }
+
+  // calculate the actual number of delimeters used from this closer
+  delimiterDelims = istack->delim_count;
+  if (numdelims < 3 || delimiterDelims < 3) {
+  useDelims = numdelims <= delimiterDelims ? numdelims : delimiterDelims;
+  } else { // (numdelims >= 3 && delimiterDelims >= 3)
+  useDelims = numdelims % 2 == 0 ? 2 : 1;
+  }
+
+  if (istack->delim_count == useDelims)
+  {
+  // the delimiter is completely used up - remove the stack entry and reuse the inline element
+  inl = istack->first_inline;
+  inl->tag = useDelims == 1 ? INL_EMPH : INL_STRONG;
+  chunk_free(&inl->content.literal);
+  inl->content.inlines = inl->next;
+  inl->next = NULL;
+
+  // remove this delimiter and all later ones from stack:
+  free_delimiters(subj, istack->previous);
+  *last = inl;
+  }
+  else
+  {
+  // the delimiter will only partially be used - stack entry remains (truncated) and a new inline is added.
+  inl = istack->first_inline;
+  istack->delim_count -= useDelims;
+  inl->content.literal.len = istack->delim_count;
+
+  emph = useDelims == 1 ? make_emph(inl->next) : make_strong(inl->next);
+  inl->next = emph;
+
+  // remove all later delimiters from stack:
+  free_delimiters(subj, istack);
+
+  *last = emph;
+  }
+
+  // if the closer was not fully used, move back a char or two and try again.
+  if (useDelims < numdelims)
+  {
+  subj->pos = subj->pos - numdelims + useDelims;
+  return NULL;
+  }
+
+  return NULL; // make_str(chunk_literal(""));
+  }
+*/
 
 // Parse backslash-escape or just a backslash, returning an inline.
 static node_inl* handle_backslash(subject *subj)
