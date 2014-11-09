@@ -13,6 +13,7 @@
 
 typedef struct DelimiterStack {
 	struct DelimiterStack *previous;
+	struct DelimiterStack *next;
 	node_inl *first_inline;
 	int delim_count;
 	unsigned char delim_char;
@@ -326,6 +327,9 @@ static delimiter_stack * push_delimiter(subject *subj,
 	istack->can_close = can_close;
 	istack->first_inline = inl_text;
 	istack->previous = subj->delimiters;
+	if (istack->previous != NULL) {
+		istack->previous->next = istack;
+	}
 	istack->position = subj->pos;
 	return istack;
 }
