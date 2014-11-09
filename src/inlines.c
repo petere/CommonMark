@@ -356,7 +356,7 @@ static void process_emphasis(subject *subj, node_inl *inlines, delimiter_stack *
 	delimiter_stack *closer = subj->delimiters;
 	delimiter_stack *opener;
 	int use_delims;
-	node_inl *inl, *tmp;
+	node_inl *inl, *tmp, *next;
 
 	// move back to first relevant delim.
 	while (closer != NULL && closer->previous != stack_bottom) {
@@ -365,6 +365,7 @@ static void process_emphasis(subject *subj, node_inl *inlines, delimiter_stack *
 
 	// now move forward, looking for closers, and handling each
 	while (closer != NULL) {
+		log_info("Examining potential closer at %d", closer->position);
 		if (closer->can_close &&
 		    (closer->delim_char == '*' || closer->delim_char == '_')) {
 			// Now look backwards for first matching opener:
@@ -376,6 +377,9 @@ static void process_emphasis(subject *subj, node_inl *inlines, delimiter_stack *
 				}
 				opener = opener->previous;
 			}
+			if (opener == NULL || opener == stack_bottom) {
+				break;
+			}
 			log_info("opener pos %d", opener->position);
 			log_info("close pos %d", closer->position);
 			// calculate the actual number of delimeters used from this closer
@@ -385,7 +389,9 @@ static void process_emphasis(subject *subj, node_inl *inlines, delimiter_stack *
 			} else { // closer and opener both have >= 3 delims
 				use_delims = closer->delim_count % 2 == 0 ? 2 : 1;
 			}
+			log_info("use_delims = %d", use_delims);
 			if (use_delims == opener->delim_count) {
+				log_info("use_delims = opener delims");
 				// the opening delimiter is completely used up;
 				// reuse the inline element
 				inl = opener->first_inline;
@@ -398,12 +404,13 @@ static void process_emphasis(subject *subj, node_inl *inlines, delimiter_stack *
 				}
 				tmp->next = NULL;
 				inl->next = closer->first_inline;
+				log_info("AA");
 				// remove delimiters from opener to closer:
 				if (closer->next) {
 					closer->next->previous = opener->previous;
 				}
-				free_delimiters(&closer, opener->previous);
-				opener = opener->previous;
+				// free_delimiters(&closer, opener->previous);
+				log_info("BB");
 
 				// TODO
 			} else {
@@ -413,11 +420,13 @@ static void process_emphasis(subject *subj, node_inl *inlines, delimiter_stack *
 				// TODO
 
 				// keep opener the same, don't set opener = opener->previous
+				next = closer->next;
+				free_delimiters(&closer, opener);
 			}
 		}
 		closer = closer->next;
 	}
-
+	log_info("CC");
 	free_delimiters(&(subj->delimiters), stack_bottom);
 }
 
