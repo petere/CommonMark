@@ -347,6 +347,7 @@ static delimiter_stack * push_delimiter(subject *subj,
 	istack->can_close = can_close;
 	istack->first_inline = inl_text;
 	istack->previous = subj->delimiters;
+	istack->next = NULL;
 	if (istack->previous != NULL) {
 		istack->previous->next = istack;
 	}
@@ -423,7 +424,6 @@ static void process_emphasis(subject *subj, delimiter_stack *stack_bottom)
 					remove_delimiter(subj, tempstack);
 					tempstack = nextstack;
 				}
-
 
 				// create new emph or strong, and splice it in to our inlines
 				// between the opener and closer
