@@ -309,6 +309,20 @@ static void free_delimiters(delimiter_stack **topptr, delimiter_stack* bottom)
 	}
 }
 
+static void remove_delim(subject *subj, delimiter_stack *stack)
+{
+	if (stack->previous != NULL) {
+		stack->previous->next = stack->next;
+	}
+	if (stack->next == NULL) {
+		// top of stack
+		subj->delimiters = stack->previous;
+	} else {
+		stack->next->previous = stack->previous;
+	}
+	free(stack);
+}
+
 static delimiter_stack * push_delimiter(subject *subj,
 					int numdelims,
 					unsigned char c,
@@ -354,9 +368,9 @@ static node_inl* handle_strong_emph(subject* subj, unsigned char c, node_inl **l
 static void process_emphasis(subject *subj, node_inl *inlines, delimiter_stack *stack_bottom)
 {
 	delimiter_stack *closer = subj->delimiters;
-	delimiter_stack *opener;
+	delimiter_stack *opener, *tempstack;
 	int use_delims;
-	node_inl *inl, *tmp, *next;
+	node_inl *inl, *tmp, *next, *emph;
 
 	// move back to first relevant delim.
 	while (closer != NULL && closer->previous != stack_bottom) {
@@ -378,10 +392,11 @@ static void process_emphasis(subject *subj, node_inl *inlines, delimiter_stack *
 				opener = opener->previous;
 			}
 			if (opener == NULL || opener == stack_bottom) {
+				closer = closer->next;
+				log_info("No matching opener found, moving to next closer");
 				break;
 			}
-			log_info("opener pos %d", opener->position);
-			log_info("close pos %d", closer->position);
+			log_info("Found opener at %d", opener->position);
 			// calculate the actual number of delimeters used from this closer
 			if (closer->delim_count < 3 || opener->delim_count < 3) {
 				use_delims = closer->delim_count <= opener->delim_count ?
@@ -390,114 +405,67 @@ static void process_emphasis(subject *subj, node_inl *inlines, delimiter_stack *
 				use_delims = closer->delim_count % 2 == 0 ? 2 : 1;
 			}
 			log_info("use_delims = %d", use_delims);
-			if (use_delims == opener->delim_count) {
-				log_info("use_delims = opener delims");
-				// the opening delimiter is completely used up;
-				// reuse the inline element
-				inl = opener->first_inline;
-				inl->tag = use_delims == 1 ? INL_EMPH : INL_STRONG;
-				chunk_free(&inl->content.literal);
-				inl->content.inlines = inl->next;
-				tmp = inl->next;
-				while (tmp->next != closer->first_inline) {
-					tmp = tmp->next;
-				}
-				tmp->next = NULL;
-				inl->next = closer->first_inline;
-				log_info("AA");
-				// remove delimiters from opener to closer:
-				if (closer->next) {
-					closer->next->previous = opener->previous;
-				}
-				// free_delimiters(&closer, opener->previous);
-				log_info("BB");
+			log_info("opener delim count = %d", opener->delim_count);
 
-				// TODO
-			} else {
-				// opening delimiter is not completely used up;
-				// we need to insert a new inline element, stack entry remains,
-				// in truncated form.
-				// TODO
+			inl = opener->first_inline;
 
-				// keep opener the same, don't set opener = opener->previous
-				next = closer->next;
-				free_delimiters(&closer, opener);
+			// remove used delimiters from stack elements and associated inlines.
+			opener->delim_count -= use_delims;
+			closer->delim_count -= use_delims;
+			inl->content.literal.len = opener->delim_count;
+			closer->first_inline->content.literal.len = closer->delim_count;
+
+			// free delimiters between opener and closer
+			free_delimiters(&(closer->previous), opener);
+
+			// create new emph or strong, and splice it in to our inlines
+			// between the opener and closer
+			emph = use_delims == 1 ? make_emph(inl->next) : make_strong(inl->next);
+			emph->next = closer->first_inline;
+			inl->next = emph;
+			log_info("emph tag = %d", emph->tag);
+			tmp = emph->content.inlines;
+			while (tmp->next != NULL && tmp->next != closer->first_inline) {
+				tmp = tmp->next;
 			}
+			tmp->next = NULL;
+
+			// if opener has 0 delims, remove it and its associated inline
+			if (opener->delim_count == 0) {
+				log_info("Removing opener");
+				// replace empty opener inline with emph
+				chunk_free(&(inl->content.literal));
+				inl->tag = emph->tag;
+				inl->next = emph->next;
+				inl->content.inlines = emph->content.inlines;
+				free(emph);
+				emph = inl;
+				// remove opener from stack
+				remove_delim(subj, opener);
+				log_info("Removed opener");
+			}
+
+			// if closer has 0 delims, remove it and its associated inline
+			if (closer->delim_count == 0) {
+				log_info("Removing closer");
+				// remove empty closer inline
+				tmp = closer->first_inline;
+				emph->next = tmp->next;
+				emph->next = NULL;
+				tmp->next = NULL;
+				free_inlines(tmp);
+				// remove closer from stack
+				tempstack = closer->next;
+				remove_delim(subj, closer);
+				closer = tempstack;
+				log_info("Removed closer");
+			}
+		} else {
+			closer = closer->next;
 		}
-		closer = closer->next;
 	}
-	log_info("CC");
 	free_delimiters(&(subj->delimiters), stack_bottom);
 }
-
-/*
-  int useDelims;
-  int delimiterDelims;
-  delimiter_stack * istack;
-  node_inl * emph;
-  node_inl * inl;
-
-  {
-  // walk the stack and find a matching delimiter, if there is one
-  istack = subj->delimiters;
-  while (true)
-  {
-  if (istack == NULL)
-  goto cannotClose;
-
-  if (istack->delim_char == c)
-  break;
-
-  istack = istack->previous;
-  }
-
-  // calculate the actual number of delimeters used from this closer
-  delimiterDelims = istack->delim_count;
-  if (numdelims < 3 || delimiterDelims < 3) {
-  useDelims = numdelims <= delimiterDelims ? numdelims : delimiterDelims;
-  } else { // (numdelims >= 3 && delimiterDelims >= 3)
-  useDelims = numdelims % 2 == 0 ? 2 : 1;
-  }
-
-  if (istack->delim_count == useDelims)
-  {
-  // the delimiter is completely used up - remove the stack entry and reuse the inline element
-  inl = istack->first_inline;
-  inl->tag = useDelims == 1 ? INL_EMPH : INL_STRONG;
-  chunk_free(&inl->content.literal);
-  inl->content.inlines = inl->next;
-  inl->next = NULL;
-
-  // remove this delimiter and all later ones from stack:
-  free_delimiters(subj, istack->previous);
-  *last = inl;
-  }
-  else
-  {
-  // the delimiter will only partially be used - stack entry remains (truncated) and a new inline is added.
-  inl = istack->first_inline;
-  istack->delim_count -= useDelims;
-  inl->content.literal.len = istack->delim_count;
-
-  emph = useDelims == 1 ? make_emph(inl->next) : make_strong(inl->next);
-  inl->next = emph;
-
-  // remove all later delimiters from stack:
-  free_delimiters(subj, istack);
-
-  *last = emph;
-  }
-
-  // if the closer was not fully used, move back a char or two and try again.
-  if (useDelims < numdelims)
-  {
-  subj->pos = subj->pos - numdelims + useDelims;
-  return NULL;
-  }
-
-  return NULL; // make_str(chunk_literal(""));
-  }
-*/
 
 // Parse backslash-escape or just a backslash, returning an inline.
 static node_inl* handle_backslash(subject *subj)
