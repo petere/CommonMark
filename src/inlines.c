@@ -353,11 +353,39 @@ static node_inl* handle_strong_emph(subject* subj, unsigned char c, node_inl **l
 
 static void process_emphasis(subject *subj, node_inl *inlines, delimiter_stack *stack_bottom)
 {
-	delimiter_stack *current ;
+	delimiter_stack *current = subj->delimiters;
+	delimiter_stack *temp;
 
-	free_delimiters(subj, stack_bottom);
+	// move back to first relevant delim.
+	while (current->previous != stack_bottom) {
+		current = current->previous;
+	}
 
-	return;
+	// now move forward, looking for closers, and handling each
+	while (current != NULL) {
+		if (current->can_close &&
+		    (current->delim_char == '*' || current->delim_char == '_')) {
+			// TODO - now look backwards for first matching opener
+			temp = current;
+			while (temp != stack_bottom) {
+				if (temp->delim_char == current->delim_char &&
+				    temp->can_open) {
+					// TODO: create emph/strong
+					// cut out this part of the stack if used up
+
+					break;
+				}
+				temp = temp->previous;
+			}
+			// while temp...
+			// if opener found:
+			//   add emphasis
+			//   cut this part out of the stack if used up
+		}
+		current = current->next;
+	}
+
+	free_delimiters(subj, stack_bottom->previous);
 }
 
 /*
