@@ -347,8 +347,12 @@ static node_inl* handle_strong_emph(subject* subj, unsigned char c, node_inl **l
 	return inl_text;
 }
 
-static void process_emphasis(node_inl *inlines, delimiter_stack *dstack)
+static void process_emphasis(subject *subj, node_inl *inlines, delimiter_stack *stack_bottom)
 {
+	delimiter_stack *current ;
+
+	free_delimiters(subj, stack_bottom);
+
 	return;
 }
 
@@ -719,16 +723,14 @@ match:
 	inl->tag = is_image ? INL_IMAGE : INL_LINK;
 	chunk_free(&inl->content.literal);
 	inl->content.linkable.label = link_text;
-	process_emphasis(inl->content.linkable.label, ostack);
+	process_emphasis(subj, inl->content.linkable.label, ostack->previous);
 	inl->content.linkable.url   = url;
 	inl->content.linkable.title = title;
 	inl->next = NULL;
 	*last = inl;
 
-	// remove this delimiter and all later ones:
-	free_delimiters(subj, ostack->previous);
-
-	// remove earlier ones of the same kind
+	// process_emphasis will remove this delimiter and all later ones.
+	// Now we also remove earlier ones of the same kind
 	// (so, no links in links, and no images in images):
 	// (This code can be removed if we decide to allow links
 	// inside links and images inside images):
@@ -784,9 +786,7 @@ extern node_inl* parse_inlines_from_subject(subject* subj)
 		}
 	}
 
-	process_emphasis(first, subj->delimiters);
-
-	free_delimiters(subj, NULL);
+	process_emphasis(subj, first, NULL);
 
 	return first;
 }
