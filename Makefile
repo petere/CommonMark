@@ -99,13 +99,13 @@ testtarball: $(TARBALL)
 	rm -rf $(PKGDIR); \
 	tar xvzf $(TARBALL); \
 	cd $(PKGDIR); \
-	mkdir build && cd build && cmake .. && make && ctest -V
+	mkdir build && cd build && cmake .. && make && ctest -V && make install DESTDIR=$(CURDIR)/testinstall
 
 testziparchive: $(ZIPARCHIVE)
 	rm -rf $(PKGDIR); \
 	unzip $(ZIPARCHIVE); \
 	cd $(PKGDIR); \
-	mkdir build && cd build && cmake .. && make && ctest -V
+	mkdir build && cd build && cmake .. && make && ctest -V && make install DESTDIR=$(CURDIR)/testinstall
 
 $(ALLTESTS): spec.txt
 	python test/spec_tests.py --spec $< --dump-tests | python -c 'import json; import sys; tests = json.loads(sys.stdin.read()); print "\n".join([test["markdown"] for test in tests]).encode("utf-8")' > $@
